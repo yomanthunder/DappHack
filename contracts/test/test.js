@@ -1,7 +1,7 @@
 const { time, loadFixture } = require("@nomicfoundation/hardhat-network-helpers");
 const { ethers } = require("hardhat");
 const { expect, assert , should , d} = require("chai");
-const { anyValue } = require("@nomicfoundation/hardhat-chai-matchers/withArgs");
+const { anyValue , withArgs } = require("@nomicfoundation/hardhat-chai-matchers/withArgs");
 const { describe } = require("mocha");
 
 //const { Result } = require("ethers");
@@ -58,38 +58,61 @@ async function deployContract() {
     }
 
 describe("Testing calculatePoolPrizeChangePayment", function () {
-    it("Basic testing", async function () {
-        const [dappHack, tester1WithProvider, sponWithProvider ,tester2WithProvider, tester3WithProvider, tester4WithProvider , spon , tester1 , tester2 , tester3 , tester4] = await deployContract();       
-        const prizePool = 100;
-        const prizeArray = [100 , 50 , 25];
+    let dappHack, tester1WithProvider, sponWithProvider, tester2WithProvider, tester3WithProvider, tester4WithProvider, spon, tester1, tester2, tester3, tester4;
 
-        const SignUp1 = await dappHack.connect(tester1WithProvider).sponsorSignup("First guy", [tester1.address], [400 ,200 , 100], 100, 1, {
-            value: ethers.parseEther("0.0000000000000008"), // replace "1.0" with the amount you want to send
-        });
-        const SignUp2 = await dappHack.connect(tester2WithProvider).sponsorSignup("Second guy", [spon.address], [400 ,200 , 100], 200, 1, {
-            value: ethers.parseEther("0.0000000000000009"), // replace "1.0" with the amount you want to send
-        });
-        const SignUp3 = await dappHack.connect(tester3WithProvider).sponsorSignup("Third guy", [tester2.address], [400 ,200 , 100], 300, 1, {
-            value: ethers.parseEther("0.0000000000000010"), // replace "1.0" with the amount you want to send
-        });
-        const SignUp4 = await dappHack.connect(tester4WithProvider).sponsorSignup("Fourth guy", [tester3.address, tester4.address], [400 ,200 , 100], 400, 1, {
-            value: ethers.parseEther("0.0000000000000011"), // replace "1.0" with the amount you want to send
-        });
+    beforeEach(async function () {
+        [dappHack, tester1WithProvider, sponWithProvider, tester2WithProvider, tester3WithProvider, tester4WithProvider, spon, tester1, tester2, tester3, tester4] = await deployContract();
 
-        const calculatePoolPrizeChangePayment = await dappHack.connect(tester2WithProvider).calculatePoolPrizeChangePayment(1,100);
-        console.log(calculatePoolPrizeChangePayment);
-
+        // Assuming your contract has a method to sign up sponsors
+        await dappHack.connect(tester1WithProvider).sponsorSignup("First guy", [tester1.address], [400,  200,  100],  100,  1, {
+            value: ethers.parseEther("0.0000000000000008")
+        });
+        await dappHack.connect(tester2WithProvider).sponsorSignup("Second guy", [spon.address], [400,  200,  100],  200,  1, {
+            value: ethers.parseEther("0.0000000000000009")
+        });
+        await dappHack.connect(tester3WithProvider).sponsorSignup("Third guy", [tester2.address], [400,  200,  100],  300,  1, {
+            value: ethers.parseEther("0.0000000000000010")
+        });
     });
+
+    it("Unit test of calculatePoolPrizeChangePayment and changePrizePool", async function () {
+        // testing calculatePoolPrizeChangePayment
+        const calculatePoolPrizeChangePayment1 = await dappHack.connect(tester2WithProvider).calculatePoolPrizeChangePayment(100);
+        expect(calculatePoolPrizeChangePayment1).to.equal(-100);
+
+        const calculatePoolPrizeChangePayment2 = await dappHack.connect(tester2WithProvider).calculatePoolPrizeChangePayment(300);
+        expect(calculatePoolPrizeChangePayment2).to.equal(100);
+
+        // testing changePrizePool
+        const beforegetSponsorPrizePool = await dappHack.connect(tester3WithProvider).getSponsorPrizePool(2);
+        expect(beforegetSponsorPrizePool).to.equal(300);
+
+        await expect(dappHack.connect(tester3WithProvider).changePrizePool(100))
+        .to.emit(dappHack, "PrizePoolChanged")
+        .withArgs(tester3.address, beforegetSponsorPrizePool , 100);
+        const aftergetSponsorPrizePool = await dappHack.connect(tester3WithProvider).getSponsorPrizePool(2);
+        expect(aftergetSponsorPrizePool).to.equal(100);
+        
+    });
+    it("Unit test of calculate of calculatePrizeArrayChangePayment and changePrizeArray", async function(){
+        // testing calculatePrizeArrayChangePayment
+        const calculatePrizeArrayChangePayment1 = await dappHack.connect(tester3WithProvider).calculatePrizeArrayChangePayment([500 , 400 , 300]);
+        expect(calculatePrizeArrayChangePayment1).to.equal(500);
+        console.log(calculatePrizeArrayChangePayment1);
+
+        const calculatePrizeArrayChangePayment2 = await dappHack.connect(tester3WithProvider).calculatePrizeArrayChangePayment([300, 200, 100]);
+        expect(calculatePrizeArrayChangePayment2).to.equal(-100);
+
+        // testing changePrizeArray
+        const beforegetSponsorPrizeArray = await dappHack.connect(tester3WithProvider).getSponsorPrizeArray();
+        console.log(beforegetSponsorPrizeArray);
+        expect(beforegetSponsorPrizeArray).to.deep.equal([400, 200, 100]);
+        await expect(dappHack.connect(tester3WithProvider).changePrizeArray([500 , 400 , 300], {value: ethers.parseEther("0.0000000000000010")}))
+        .to.emit(dappHack, "PrizeArrayChanged")
+        .withArgs(tester3.address, beforegetSponsorPrizeArray , [500 , 400 , 300]);
+        
+
+    })
 });
 
-
-// const getSponsorAddress1 = await dappHack.connect(sponWithProvider).getSponsorAddress(0);
-// const getSponsorAddress2 = await dappHack.connect(sponWithProvider).getSponsorAddress(1);
-// console.log(getSponsorAddress1, getSponsorAddress2);
-// const CheckSponsor1 = await dappHack.connect(sponWithProvider).isSponsor1(spon.address , 0);
-// console.log(CheckSponsor1);
-// const CheckSponsor2 = await dappHack.connect(sponWithProvider).isSponsor1(spon.address , 1);
-// console.log(CheckSponsor2);
-// const CheckSponsorId1 = await dappHack.connect(sponWithProvider).getSponsorId(tester1.address);
-// console.log(CheckSponsorId1);
 
