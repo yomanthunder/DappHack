@@ -58,6 +58,7 @@ contract DappHack is ProjectNFTs {
     //builders
     address[] public s_builders;
 
+    mapping(address => uint256) public builderToTeamId;
     mapping(address => Team) public builderToTeam;
 
     //teams
@@ -77,8 +78,15 @@ contract DappHack is ProjectNFTs {
         uint256 oldPrize,
         uint256 newPrize
     );
+    event PrizeArrayChanged(
+        address indexed sponsor,
+        uint256[] oldPrizeArray,
+        uint256[] newPrizeArray);
     event BuilderSignedUp(address indexed builder);
+    event BuilderWithdrawn(address indexed builder);
     event TeamInitialized(string name, address[] participants);
+    event TeamChanged(uint256 fromTeam, uint256 toTeam);
+    event TeamWithdrawn(uint256 teamNumber, address indexed participant);
     event ProjectSubmitted(uint256 teamNumber, string nftUri);
     event WinnerJudged(uint256 trackNumber, uint256 winnerNumber);
     event PrizeDistributed(uint256 amount);
@@ -130,8 +138,7 @@ contract DappHack is ProjectNFTs {
 
     //create mapping for this
     modifier NotInTeam() {
-        // need a mapping from address(of the signer) to team as cant fetch a team that is not created
-        // require(s_teams[msg.sender] == 0, "Already in a team");
+        require(builderToTeamId[msg.sender] == 0, "Already in a team");
         _;
     }
 
@@ -243,54 +250,118 @@ contract DappHack is ProjectNFTs {
         emit SponsorSignedUp(name, msg.sender, msg.value);
     }
 
-    /**
+        /**
      * @dev Allows a sponsor to change the prize pool for their sponsorship.
-     * @param sponsorNumber The index of the sponsor in the `s_sponsors` array.
-     * @param newPrize The new prize amount for the sponsor.
+     * @param newPrizePool The new prize pool amount for the sponsor.
      */
-
-    function changePrizePool(
-        uint256 sponsorNumber,
-        uint256 newPrize
-    ) public payable OnlySponsor {
-        require(newPrize > 0, "Invalid prize amount");
-
+    //sponsorid is same as sponsor number as far as code is structured
+    function calculatePoolPrizeChangePayment(
+        uint256 newPrizePool
+    ) public view OnlySponsor returns (int256 amt) {
+        // Update the sponsor prize pool
+        require(newPrizePool > 0, "Invalid prize amount");
+        uint256 sponsorNumber = sponsorToId[msg.sender];
         Sponsor memory sponsor = s_sponsors[sponsorNumber];
-
         uint256 temp_sum = 0;
-        uint256[] memory temp_array = sponsor.prizeArray;
-        for (uint i = 0; i < temp_array.length; ++i) {
-            temp_sum += temp_array[i];
+        for (uint i = 0; i < sponsor.prizeArray.length; ++i) {
+            temp_sum += sponsor.prizeArray[i];
         }
-
-        // check that the newPrize fund is greater than the sum of all the prizes
-        require(
-            newPrize >= temp_sum + sponsor.poolPrize,
-            "Invalid prize amount"
-        );
-
-        uint256 oldPrize = sponsorPrizePool[sponsorNumber];
-
-        int amt = int(newPrize - oldPrize);
-
-        if (amt >= 0) {
-            payable(address(this)).transfer(uint256(amt));
+        //sponsorPrizePool[sponsorNumber]
+        if (temp_sum + newPrizePool > sponsorPrizePool[sponsorNumber]) {
+            amt = int256(
+                temp_sum + newPrizePool - sponsorPrizePool[sponsorNumber]
+            );
+            return amt;
         } else {
-            payable(msg.sender).transfer(uint256(-amt));
+            amt = int256(
+                sponsorPrizePool[sponsorNumber] - temp_sum - newPrizePool
+            );
+            return -amt;
         }
-        //update total prize pool
-        s_totalPrizePool += uint256(amt);
-
-        //prizePoolStructChange to be called
-
-        sponsorPrizePool[sponsorNumber] = newPrize;
-        s_sponsors[sponsorNumber].poolPrize = newPrize;
-
-        emit PrizePoolChanged(msg.sender, oldPrize, newPrize);
     }
 
-    function changePrizePoolSTruct() public payable {
-        /// TODO
+    function changePrizePool(uint256 newPrize) public payable OnlySponsor {
+        uint256 sponsorNumber = sponsorToId[msg.sender];
+        int256 paymentRequired = calculatePoolPrizeChangePayment(newPrize);
+        if (paymentRequired > 0) {
+            require(
+                msg.value >= uint256(paymentRequired),
+                "Insufficient payment"
+            );
+        }
+
+        if (paymentRequired > 0) {
+            payable(address(this)).transfer(uint256(paymentRequired));
+            sponsorPrizePool[sponsorNumber] += uint256(paymentRequired);
+        } else {
+            payable(msg.sender).transfer(uint256(-paymentRequired));
+            sponsorPrizePool[sponsorNumber] =
+                sponsorPrizePool[sponsorNumber] -
+                uint256(-paymentRequired);
+        }
+        uint256 oldPoolPrize = s_sponsors[sponsorNumber].poolPrize;
+        s_sponsors[sponsorNumber].poolPrize = newPrize;
+        // also update sponsortosponsorProtocol
+
+        emit PrizePoolChanged(msg.sender, oldPoolPrize, newPrize);
+    }
+
+    /**
+     * @dev Allows a sponsor to change the prize pool for their sponsorship.
+     * @param newPrizeArray The new prize Array of the sponsor.
+     */
+    function calculatePrizeArrayChangePayment(
+        uint256[] memory newPrizeArray
+    ) public view OnlySponsor returns (int256 amt) {
+        //update the sponsor prize pool
+        uint256 temp_sum = 0;
+        for (uint i = 0; i < newPrizeArray.length; ++i) {
+            temp_sum += newPrizeArray[i];
+        }
+        require(temp_sum > 0, "Invalid prize amount");
+        uint256 sponsorNumber = sponsorToId[msg.sender];
+        Sponsor memory sponsor = s_sponsors[sponsorNumber];
+        if (temp_sum + sponsor.poolPrize > sponsorPrizePool[sponsorNumber]) {
+            amt = int256(
+                temp_sum + sponsor.poolPrize - sponsorPrizePool[sponsorNumber]
+            );
+            return amt;
+        } else {
+            amt = int256(
+                sponsorPrizePool[sponsorNumber] - temp_sum - sponsor.poolPrize
+            );
+            return -amt;
+        }
+    }
+
+    function changePrizeArray(
+        uint256[] memory newPrizeArray
+    ) public payable OnlySponsor {
+        uint256 sponsorNumber = sponsorToId[msg.sender];
+        int256 paymentRequired = calculatePrizeArrayChangePayment(
+            newPrizeArray
+        );
+        if (paymentRequired > 0) {
+            require(
+                msg.value > uint256(paymentRequired),
+                "Insufficient payment"
+            );
+        }
+
+        uint256[] memory oldPrizeArray = s_sponsors[sponsorNumber].prizeArray;
+        s_sponsors[sponsorNumber].prizeArray = newPrizeArray;
+        if (paymentRequired > 0) {
+            payable(address(this)).transfer(uint256(paymentRequired));
+            sponsorPrizePool[sponsorNumber] += uint256(paymentRequired);
+        } else {
+            payable(msg.sender).transfer(uint256(-paymentRequired));
+            sponsorPrizePool[sponsorNumber] =
+                sponsorPrizePool[sponsorNumber] -
+                uint256(-paymentRequired);
+        }
+        // also update sponsortosponsorProtocol
+
+        emit PrizeArrayChanged(msg.sender, oldPrizeArray, newPrizeArray);
     }
 
     /**
@@ -311,8 +382,33 @@ contract DappHack is ProjectNFTs {
         payable(address(this)).transfer(STAKE);
 
         emit BuilderSignedUp(msg.sender);
+    }
 
-        // builder withdraw ?
+    function withdrawBuilder() public OnlyBuilder {
+        Team memory newTeam; // created a empty team object
+        // Remove from Builders
+        for (uint256 i = 0; i < s_builders.length; i++) {
+            if (s_builders[i] == msg.sender) {
+                s_builders[i] = s_builders[s_builders.length - 1];
+                s_builders.pop();
+                break;
+            }
+        }
+        // remove builder from Teams
+        uint256 Teamid = builderToTeamId[msg.sender];
+        if (Teamid != 0) {
+            for (uint256 i = 0; i < s_teams[Teamid].participants.length; i++) {
+                if (s_teams[Teamid].participants[i] == msg.sender) {
+                    s_teams[Teamid].participants[i] = s_teams[Teamid]
+                        .participants[s_teams[Teamid].participants.length - 1];
+                    s_teams[Teamid].participants.pop();
+                }
+            }
+            builderToTeamId[msg.sender] = 0;
+            builderToTeam[msg.sender] = newTeam;
+        }
+
+        emit BuilderWithdrawn(msg.sender);
     }
 
     /**
@@ -324,18 +420,74 @@ contract DappHack is ProjectNFTs {
         string memory name,
         address[] memory participants
     ) public OnlyValidTeamSize(participants.length) NotInTeam {
+        // loop to check participants are not already in a team
+        for (uint256 i = 0; i < participants.length; i++) {
+            require(
+                builderToTeamId[participants[i]] == 0,
+                "participants already in team"
+            );
+        }
         //add the team to the team array
         s_teams.push(Team(name, participants, false, false)); // ATTACK_VECTOR: People can add members already in a team , a Problem
-
-        // give the team to builder in mapping
+        // give team id to participants
+        // give the builder to team in mapping
 
         for (uint256 i = 0; i < participants.length; i++) {
+            builderToTeamId[participants[i]] = s_teams.length;
             builderToTeam[participants[i]] = s_teams[s_teams.length - 1];
         }
-
         emit TeamInitialized(name, participants);
+    }
 
-        //team withdraw ?
+    /**
+     * @dev Change the team for the competition.
+     */
+    function changeTeam(
+        uint256 fromTeamId,
+        uint256 toTeamId
+    ) public OnlyBuilder {
+        require(
+            s_teams[fromTeamId].participants.length < s_teamSizeLimit,
+            "Invalid team size"
+        );
+        require(
+            builderToTeamId[msg.sender] == fromTeamId + 1,
+            "Invalid team id"
+        );
+
+        for (uint256 i = 0; i < s_teams[fromTeamId].participants.length; i++) {
+            if (s_teams[fromTeamId].participants[i] == msg.sender) {
+                s_teams[fromTeamId].participants[i] = s_teams[fromTeamId]
+                    .participants[s_teams[fromTeamId].participants.length - 1];
+
+                s_teams[fromTeamId].participants.pop();
+                break;
+            }
+        }
+        s_teams[toTeamId].participants.push(msg.sender);
+        builderToTeam[msg.sender] = s_teams[toTeamId];
+        builderToTeamId[msg.sender] = toTeamId;
+        emit TeamChanged(fromTeamId, toTeamId);
+    }
+
+    /**
+     * @dev Withdraws a team from the competition.
+     */
+
+    function withdrawTeam() public OnlyBuilder {
+        Team memory newTeam;
+        uint256 teamId = builderToTeamId[msg.sender];
+        for (uint256 i = 0; i < s_teams[teamId].participants.length; i++) {
+            if (s_teams[teamId].participants[i] == msg.sender) {
+                s_teams[teamId].participants[i] = s_teams[teamId].participants[
+                    s_teams[teamId].participants.length - 1
+                ];
+                s_teams[teamId].participants.pop();
+            }
+        }
+        builderToTeamId[msg.sender] = 0;
+        builderToTeam[msg.sender] = newTeam;
+        emit TeamWithdrawn(teamId, msg.sender);
     }
 
     /**
@@ -567,6 +719,14 @@ contract DappHack is ProjectNFTs {
         uint256 sponsorNumber
     ) public view returns (uint256) {
         return s_sponsors[sponsorNumber].poolPrize;
+    }
+    /**
+     * @dev Returns the prize Array for the sponsor .
+     * @return The prize Array for the sponsor.
+     */
+    function getSponsorPrizeArray() public view returns (uint256[] memory) {
+        uint256 sponsorNumber = sponsorToId[msg.sender];
+        return s_sponsors[sponsorNumber].prizeArray;
     }
 
     /**
