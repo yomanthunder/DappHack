@@ -37,7 +37,7 @@ async function deployContract() {
     const endTime = 163; // Replace with your desired end time
     const maxParticipants = 100; // Replace with your desired maximum number of participants
     const teamSizeLimit = 5; // Replace with your desired maximum team size
-    const organizers = [tester1.address]; // Replace with your desired organizer addresses
+    const organizers = [tester1.address,spon.address]; // Replace with your desired organizer addresses
     const name = "My Project NFT"; // Replace with your desired project NFT name
     const symbol = "MPN"; // Replace with your desired project NFT symbol
 
@@ -56,21 +56,35 @@ async function deployContract() {
     return [dappHack, tester1WithProvider, sponWithProvider, tester2WithProvider, tester3WithProvider, tester4WithProvider, spon, tester1, tester2, tester3, tester4];
 }
 
-describe("Testing Team Functions", function () {
+describe("Testing Parent Contract Functions", function () {
     let dappHack, tester1WithProvider, sponWithProvider, tester2WithProvider, tester3WithProvider, tester4WithProvider, spon, tester1, tester2, tester3, tester4;
 
     beforeEach(async function () {
         [dappHack, tester1WithProvider, sponWithProvider, tester2WithProvider, tester3WithProvider, tester4WithProvider, spon, tester1, tester2, tester3, tester4] = await deployContract();
 
+        // Sponsor Signup
+        // Assuming your contract has a method to sign up sponsors
+        await dappHack.connect(tester1WithProvider).sponsorSignup("First guy", [tester1.address], [400, 200, 100], 100, 1, {
+            value: ethers.parseEther("0.0000000000000008")
+        });
+        await dappHack.connect(tester2WithProvider).sponsorSignup("Second guy", [spon.address], [400, 200, 100], 200, 1, {
+            value: ethers.parseEther("0.0000000000000009")
+        });
+        await dappHack.connect(tester3WithProvider).sponsorSignup("Third guy", [tester2.address], [400, 200, 100], 300, 1, {
+            value: ethers.parseEther("0.0000000000000010")
+        });
+        await dappHack.connect(tester4WithProvider).sponsorSignup("Fourth guy", [tester3.address], [400, 200, 100], 400, 1, {
+            value: ethers.parseEther("0.0000000000000011")
+        });
         //signup builders to the hackathon
         await dappHack.connect(tester1WithProvider).builderSignup({ value: ethers.parseEther("0.01") });
-        await dappHack.connect(tester2WithProvider).builderSignup({ value: ethers.parseEther("0.01") });
+        // await dappHack.connect(tester2WithProvider).builderSignup({ value: ethers.parseEther("0.01") });
         await dappHack.connect(tester3WithProvider).builderSignup({ value: ethers.parseEther("0.01") });
         await dappHack.connect(tester4WithProvider).builderSignup({ value: ethers.parseEther("0.01") });
 
 
     });
-
+    
     it("Unit test for withdrawBuilder function", async function () {
         await expect(dappHack.connect(tester3WithProvider).withdrawBuilder()).to.emit(dappHack, "BuilderWithdrawn").withArgs(tester3.address);
     });
@@ -123,65 +137,143 @@ describe("Testing Team Functions", function () {
         const getTeamSize3 = await dappHack.getTeamSize(1);
         expect(getTeamSize3).to.equal(1); // team size changes from 2 to 1 due to withdraw 
     });
+    it("unit test of submitProject", async function () {
+        // initialising a Teams 
+        const teamName1 = "Team 1";
+        const teamMembers1 = [tester2.address, tester3.address];
+        await expect(dappHack.connect(tester3WithProvider).initializeTeam(teamName1, teamMembers1)).to.emit(dappHack, "TeamInitialized").withArgs(teamName1, teamMembers1);
 
-    describe("Testing calculatePoolPrizeChangePayment", function () {
-        let dappHack, tester1WithProvider, sponWithProvider, tester2WithProvider, tester3WithProvider, tester4WithProvider, spon, tester1, tester2, tester3, tester4;
+        const teamName2 = "Team 2";
+        const teamMembers2 = [tester4.address];
+        await expect(dappHack.connect(tester4WithProvider).initializeTeam(teamName2, teamMembers2)).to.emit(dappHack, "TeamInitialized").withArgs(teamName2, teamMembers2);
 
-        beforeEach(async function () {
-            [dappHack, tester1WithProvider, sponWithProvider, tester2WithProvider, tester3WithProvider, tester4WithProvider, spon, tester1, tester2, tester3, tester4] = await deployContract();
+        // project submission
+        const submittedProject1 = await dappHack.connect(tester3WithProvider).submitProject(0, "Dapp");
+        await expect(submittedProject1).to.emit(dappHack, "ProjectSubmitted").withArgs(0, "Dapp");
+        const submittedProject2 = await dappHack.connect(tester4WithProvider).submitProject(1, "Dapp1");
+        await expect(submittedProject2).to.emit(dappHack, "ProjectSubmitted").withArgs(1, "Dapp1");
 
-            // Assuming your contract has a method to sign up sponsors
-            await dappHack.connect(tester1WithProvider).sponsorSignup("First guy", [tester1.address], [400, 200, 100], 100, 1, {
-                value: ethers.parseEther("0.0000000000000008")
-            });
-            await dappHack.connect(tester2WithProvider).sponsorSignup("Second guy", [spon.address], [400, 200, 100], 200, 1, {
-                value: ethers.parseEther("0.0000000000000009")
-            });
-            await dappHack.connect(tester3WithProvider).sponsorSignup("Third guy", [tester2.address], [400, 200, 100], 300, 1, {
-                value: ethers.parseEther("0.0000000000000010")
-            });
+
+        // checking the updated map data 
+        const getProjectName = await dappHack.getTeamProject(0);
+        expect(getProjectName).to.equal(true);
+        const getProjectName2 = await dappHack.getTeamProject(1);
+        expect(getProjectName2).to.equal(true);
+
+        // dummy submission
+        // for some reason to.be.reverted is not working properly (test is working but the error message is getting printed) 
+        // const submittedProject3 = await dappHack.connect(tester3WithProvider).submitProject(0, "Dapp3");
+        // await expect(submittedProject3).to.be.reverted;
+
+       
+    })
+    it("unit test of judgeWinner function", async function () {
+        await dappHack.connect(tester2WithProvider).judgeWinner("Xero", [1,2,3], [0]);
+        const winnerCount = await dappHack.getWinnerCount();
+        expect(winnerCount).to.equal(1);
+    })
+    
+    it("Unit Tests for returnStake function and transferNFTAfterHackathon", async function () {
+        const teamName1 = "Team 1";
+        const teamMembers1 = [tester2.address, tester3.address];
+        await expect(dappHack.connect(tester3WithProvider).initializeTeam(teamName1, teamMembers1)).to.emit(dappHack, "TeamInitialized").withArgs(teamName1, teamMembers1);
+
+        const teamName2 = "Team 2";
+        const teamMembers2 = [tester4.address];
+        await expect(dappHack.connect(tester4WithProvider).initializeTeam(teamName2, teamMembers2)).to.emit(dappHack, "TeamInitialized").withArgs(teamName2, teamMembers2);
+
+        // project submission
+        const submittedProject1 = await dappHack.connect(tester3WithProvider).submitProject(0, "Dapp");
+        await expect(submittedProject1).to.emit(dappHack, "ProjectSubmitted").withArgs(0, "Dapp");
+        const submittedProject2 = await dappHack.connect(tester4WithProvider).submitProject(1, "Dapp1");
+        await expect(submittedProject2).to.emit(dappHack, "ProjectSubmitted").withArgs(1, "Dapp1");
+        //balance before returning stake
+        const balance = await dappHack.connect(tester2WithProvider).getBalance();
+        // returning stake to submitted projects 
+        await dappHack.connect(sponWithProvider).returnStake();
+        // balance after returning stake
+        const balance2 = await dappHack.getBalance();
+        // total 3 members will get there stake back (as these were the 2 teams which have submitted a project)
+        const a = balance-balance2;
+        expect(a).to.equal(3000000000000000);
+        //Transfer nft after hackathon
+        // internal function cant be tested here
+        // await dappHack.connect(sponWithProvider).transferNFTAfterHackathon(0);
+        
+    })
+
+});
+describe("Testing calculatePoolPrizeChangePayment", function () {
+    let dappHack, tester1WithProvider, sponWithProvider, tester2WithProvider, tester3WithProvider, tester4WithProvider, spon, tester1, tester2, tester3, tester4;
+
+    beforeEach(async function () {
+        [dappHack, tester1WithProvider, sponWithProvider, tester2WithProvider, tester3WithProvider, tester4WithProvider, spon, tester1, tester2, tester3, tester4] = await deployContract();
+
+        // Assuming your contract has a method to sign up sponsors
+        await dappHack.connect(tester1WithProvider).sponsorSignup("First guy", [tester1.address], [400,  200,  100],  100,  1, {
+            value: ethers.parseEther("0.0000000000000008")
         });
-
-        it("Unit test of calculatePoolPrizeChangePayment and changePrizePool", async function () {
-            // testing calculatePoolPrizeChangePayment
-            const calculatePoolPrizeChangePayment1 = await dappHack.connect(tester2WithProvider).calculatePoolPrizeChangePayment(100);
-            expect(calculatePoolPrizeChangePayment1).to.equal(-100);
-
-            const calculatePoolPrizeChangePayment2 = await dappHack.connect(tester2WithProvider).calculatePoolPrizeChangePayment(300);
-            expect(calculatePoolPrizeChangePayment2).to.equal(100);
-
-            // testing changePrizePool
-            const beforegetSponsorPrizePool = await dappHack.connect(tester3WithProvider).getSponsorPrizePool(2);
-            expect(beforegetSponsorPrizePool).to.equal(300);
-
-            await expect(dappHack.connect(tester3WithProvider).changePrizePool(100))
-                .to.emit(dappHack, "PrizePoolChanged")
-                .withArgs(tester3.address, beforegetSponsorPrizePool, 100);
-            const aftergetSponsorPrizePool = await dappHack.connect(tester3WithProvider).getSponsorPrizePool(2);
-            expect(aftergetSponsorPrizePool).to.equal(100);
-
+        await dappHack.connect(tester2WithProvider).sponsorSignup("Second guy", [tester2.address,spon.address], [400,  200,  100],  200,  1, {
+            value: ethers.parseEther("0.0000000000000009")
         });
-        it("Unit test of calculate of calculatePrizeArrayChangePayment and changePrizeArray", async function () {
-            // testing calculatePrizeArrayChangePayment
-            const calculatePrizeArrayChangePayment1 = await dappHack.connect(tester3WithProvider).calculatePrizeArrayChangePayment([500, 400, 300]);
-            expect(calculatePrizeArrayChangePayment1).to.equal(500);
-            const calculatePrizeArrayChangePayment2 = await dappHack.connect(tester3WithProvider).calculatePrizeArrayChangePayment([300, 200, 100]);
-            expect(calculatePrizeArrayChangePayment2).to.equal(-100);
-
-            // testing changePrizeArray
-            const beforegetSponsorPrizeArray = await dappHack.connect(tester3WithProvider).getSponsorPrizeArray();
-            // need to send eth when you setting prize array greater than the before msg.value
-            expect(beforegetSponsorPrizeArray).to.deep.equal([400, 200, 100]);
-            await expect(dappHack.connect(tester3WithProvider).changePrizeArray([500, 400, 300], { value: ethers.parseEther("0.0000000000000010") }))
-                .to.emit(dappHack, "PrizeArrayChanged")
-                .withArgs(tester3.address, beforegetSponsorPrizeArray, [500, 400, 300]);
-
-            const aftergetSponsorPrizeArray = await dappHack.connect(tester3WithProvider).getSponsorPrizeArray();
-            expect(aftergetSponsorPrizeArray).to.deep.equal([500, 400, 300]);
-            // no need send eth when you are sending less prize array campared to before 
-            await expect(dappHack.connect(tester3WithProvider).changePrizeArray([300, 200, 100]))
-                .to.emit(dappHack, "PrizeArrayChanged")
-                .withArgs(tester3.address, [500, 400, 300], [300, 200, 100]);
-        })
+        await dappHack.connect(tester3WithProvider).sponsorSignup("Third guy", [tester3.address], [400,  200,  100],  300,  1, {
+            value: ethers.parseEther("0.0000000000000010")
+        });
     });
+
+    it("Unit test of calculatePoolPrizeChangePayment and changePrizePool", async function () {
+        // testing calculatePoolPrizeChangePayment
+        const calculatePoolPrizeChangePayment1 = await dappHack.connect(tester2WithProvider).calculatePoolPrizeChangePayment(100);
+        expect(calculatePoolPrizeChangePayment1).to.equal(-100);
+
+        const calculatePoolPrizeChangePayment2 = await dappHack.connect(tester2WithProvider).calculatePoolPrizeChangePayment(400);
+        expect(calculatePoolPrizeChangePayment2).to.equal(200);
+
+        // testing changePrizePool
+        const beforegetSponsorPrizePool = await dappHack.connect(tester2WithProvider).getSponsorPrizePool(1);
+         expect(beforegetSponsorPrizePool).to.equal(200);
+        // getting balances before changing
+        const balance1 = await dappHack.connect(tester2WithProvider).getBalance()
+        await expect(dappHack.connect(tester2WithProvider).changePrizePool(100))
+        .to.emit(dappHack, "PrizePoolChanged")
+        .withArgs(tester2.address, beforegetSponsorPrizePool , 100);
+        const aftergetSponsorPrizePool = await dappHack.connect(tester3WithProvider).getSponsorPrizePool(1);
+        expect(aftergetSponsorPrizePool).to.equal(100);
+        // getting balances after changing
+        const balance2 = await dappHack.connect(tester3WithProvider).getBalance()
+        expect(balance2 - balance1).to.equal(-100);
+        
+    });
+    it("Unit test of calculate of calculatePrizeArrayChangePayment and changePrizeArray", async function(){
+        // testing calculatePrizeArrayChangePayment
+        const calculatePrizeArrayChangePayment1 = await dappHack.connect(tester3WithProvider).calculatePrizeArrayChangePayment([500 , 400 , 300]);
+        expect(calculatePrizeArrayChangePayment1).to.equal(500);
+        
+
+        const calculatePrizeArrayChangePayment2 = await dappHack.connect(tester3WithProvider).calculatePrizeArrayChangePayment([300, 200, 100]);
+        expect(calculatePrizeArrayChangePayment2).to.equal(-100);
+
+        // testing changePrizeArray
+        const beforegetSponsorPrizeArray = await dappHack.connect(tester3WithProvider).getSponsorPrizeArray();
+        // balance before making change
+        const balance1 = await dappHack.connect(tester3WithProvider).getBalance()
+        // need to send eth when you setting prize array greater than the before msg.value
+        expect(beforegetSponsorPrizeArray).to.deep.equal([400, 200, 100]);
+        await expect(dappHack.connect(tester3WithProvider).changePrizeArray([500 , 400 , 300], {value: ethers.parseEther("0.0000000000000010")}))
+        .to.emit(dappHack, "PrizeArrayChanged")
+        .withArgs(tester3.address, beforegetSponsorPrizeArray , [500 , 400 , 300]);
+        // balance after making first change
+        const balance2 = await dappHack.connect(tester3WithProvider).getBalance()
+        expect(balance2 - balance1).to.equal(1000);
+        const aftergetSponsorPrizeArray = await dappHack.connect(tester3WithProvider).getSponsorPrizeArray();
+        
+        expect(aftergetSponsorPrizeArray).to.deep.equal([500 , 400 , 300]);
+        // no need send eth when you are sending less prize array campared to before 
+        await expect(dappHack.connect(tester3WithProvider).changePrizeArray([300 , 200 , 100]))
+        .to.emit(dappHack, "PrizeArrayChanged")
+        .withArgs(tester3.address, [500 , 400 , 300] , [300 , 200 , 100]);
+        // balance after making second change
+        const balance3 = await dappHack.connect(tester3WithProvider).getBalance()
+        expect(balance3 - balance2).to.equal(-600);
+    })
 });

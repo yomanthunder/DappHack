@@ -209,7 +209,6 @@ contract DappHack is ProjectNFTs {
     ) public payable {
         // send a positive value
         require(msg.value > 0, "Invalid prize amount");
-
         uint256 sum = 0;
 
         for (uint i = 0; i < _prizeArray.length; ++i) {
@@ -240,8 +239,11 @@ contract DappHack is ProjectNFTs {
                 s_sponsors.length - 1
             ];
         }
-
+        
         //give sponsor a id
+        for(uint256 i = 0; i < _sponsors.length; i++){
+            sponsorToId[_sponsors[i]] = s_sponsors.length - 1;
+        }
         sponsorToId[msg.sender] = s_sponsors.length - 1;
 
         //add in sponsor prizepool array
@@ -752,6 +754,10 @@ contract DappHack is ProjectNFTs {
      * @dev Returns the number of teams.
      * @return The number of teams.
      */
+
+    function getTeamProject(uint256 teamNumber) public view returns (bool) {
+        return s_teams[teamNumber].validProject;
+    }
     function getTeamCount() public view returns (uint256) {
         return s_teams.length;
     }
@@ -828,5 +834,12 @@ contract DappHack is ProjectNFTs {
         uint256 winnerNumber
     ) public view returns (uint256[] memory) {
         return s_winners[winnerNumber].poolPrizeWinners;
+    }
+    /**
+     * @dev Returns the balance the contract has.
+     * @return The balance the contract has.
+     */
+    function getBalance() public view returns (uint256) {
+        return address(this).balance;
     }
 }
